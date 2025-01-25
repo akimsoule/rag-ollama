@@ -1,0 +1,1 @@
+[2025-01-25T22:05:28.478Z] Error crawling https://www.canada.ca/fr/agence-revenu/programmes/a-propos-agence-revenu-canada-arc/rapports-information-entreprise.html: this.logError is not a function
