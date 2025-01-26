@@ -9,7 +9,7 @@ Un projet d'indexation et d'interrogation de base de données vectorielle avec L
 
 **Description du projet**
 
-Ce projet a pour objectif principal l'indexation et l'interrogation de bases de données vectorielles utilisant le framework LanceDB et la bibliothèque Ollama.
+Ce projet a pour objectif principal l'indexation et l'interrogation de bases de données vectorielles utilisant la librairie LanceDB et la bibliothèque Ollama.
 
 **Exécution des scripts**
 
