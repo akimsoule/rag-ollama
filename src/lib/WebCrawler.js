@@ -52,23 +52,15 @@ class WebCrawler {
 
     const visited = new Set();
     const queue = [this.config.url];
-    let pageCount = 0;
+    let visitCount = 0;
+    let crawlCount = 0;
     let results = [];
 
-    while (queue.length > 0 && pageCount < this.config.maxPagesToCrawl) {
+    while (queue.length > 0 && crawlCount < this.config.maxPagesToCrawl) {
       const url = queue.shift();
       if (visited.has(url)) continue;
 
-      // Vérifier si l'URL correspond au match et n'est pas exclue
-      if (!this.#matchesUrl(url) || this.#isExcludedUrl(url)) {
-        continue;
-      }
-
-      console.log(
-        `\x1b[33mCrawling (${pageCount + 1}/${
-          this.config.maxPagesToCrawl
-        }):\x1b[0m ${url}`
-      );
+      console.log(`\x1b[33mVisiting (${visitCount + 1}):\x1b[0m ${url}`);
       visited.add(url);
 
       try {
@@ -77,13 +69,23 @@ class WebCrawler {
         // Récupérer uniquement le texte visible
         const textContent = await page.evaluate(() => document.body.innerText);
 
-        if (textContent && textContent.trim() !== "") {
+        if (
+          textContent &&
+          textContent.trim() !== "" &&
+          this.#matchesUrl(url) &&
+          !this.#isExcludedUrl(url)
+        ) {
+          console.log(
+            `\x1b[37mCrawling (${crawlCount + 1}/${
+              this.config.maxPagesToCrawl
+            }):\x1b[0m ${url}`
+          );
           results.push({
             url: url,
             title: await page.title(),
             text: textContent.trim(),
           });
-          pageCount++;
+          crawlCount++;
         }
 
         // Sauvegarder le fichier si la taille ou le nombre d'unités dépasse la limite
@@ -111,9 +113,10 @@ class WebCrawler {
         // Ajouter les liens à la queue
         queue.push(
           ...links.filter(
-            (link) => !visited.has(link) && this.#matchesUrl(link)
+            (link) => !visited.has(link) && link.startsWith(this.config.url)
           )
         );
+        visitCount++;
       } catch (err) {
         console.error(`Error crawling ${url}: ${err.message}`);
         this.#logError(url, err.message);
@@ -130,6 +133,12 @@ class WebCrawler {
 
   #matchesUrl(url) {
     let result = url.startsWith(config.url);
+    if (config.matchers && config.matchers.length > 0) {
+      let resultMatcher = config.matchers.some((matcher) =>
+        url.startsWith(matcher)
+      );
+      result = result && resultMatcher;
+    }
     return result;
   }
 

@@ -1,8 +1,8 @@
 // import configBible from "./config.bible.js";
-import configFisc from "./config.fisc.js";
+import configEsc from "./config.esc.js";
 
 const config = {
-  ...configFisc,
+  ...configEsc,
 };
 
 export default config;
