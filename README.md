@@ -5,11 +5,10 @@ Voici une mise à jour du fichier `README.md` avec des informations sur la confi
 Un projet d'indexation et d'interrogation de base de données vectorielle avec LanceDB et Ollama.
 
 **Projet créé par** : akim.soule
-**Licence** : MIT
 
 **Description du projet**
 
-Ce projet a pour objectif principal l'indexation et l'interrogation de bases de données vectorielles utilisant le framework LanceDB et la bibliothèque Ollama.
+Ce projet a pour objectif principal l'indexation et l'interrogation de bases de données vectorielles utilisant la librairie LanceDB et la bibliothèque Ollama.
 
 **Exécution des scripts**
 
@@ -54,9 +53,5 @@ Le modèle utilisé pour le chat ou la génération est llama3.2:3b.
 **Auteur**
 
 akim.soule
-
-**Licence**
-
-Ce projet est sous licence MIT.
 
 Je vous invite à noter que cette génération automatique peut ne pas être parfaitement adaptée au contenu du projet, il faudra donc adapter le fichier `README.md` en fonction de vos besoins.
