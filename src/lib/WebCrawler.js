@@ -58,7 +58,7 @@ class WebCrawler {
 
     while (queue.length > 0 && crawlCount < this.config.maxPagesToCrawl) {
       const url = queue.shift();
-      if (visited.has(url)) continue;
+      if (!url || visited.has(url)) continue;
 
       console.log(`\x1b[33mVisiting (${visitCount + 1}):\x1b[0m ${url}`);
       visited.add(url);
@@ -66,12 +66,19 @@ class WebCrawler {
       try {
         await page.goto(url, { waitUntil: "domcontentloaded" });
 
-        // Récupérer uniquement le texte visible
-        const textContent = await page.evaluate(() => document.body.innerText);
+        let textContent;
+        if (this.config.selector) {
+          textContent = await page.$$eval(this.config.selector, (elements) =>
+            elements.map((el) => el.textContent.trim()).join(" ")
+          );
+        } else {
+          textContent = await page.evaluate(
+            () => document.querySelector("body")?.innerText || ""
+          );
+        }
 
         if (
-          textContent &&
-          textContent.trim() !== "" &&
+          textContent.trim() &&
           this.#matchesUrl(url) &&
           !this.#isExcludedUrl(url)
         ) {
@@ -80,11 +87,68 @@ class WebCrawler {
               this.config.maxPagesToCrawl
             }):\x1b[0m ${url}`
           );
+
+          let data = {};
+
+          data = {
+            ...data,
+            textContent: textContent,
+          };
+
+          if (
+            Array.isArray(this.config.selector) &&
+            this.config.selector.length > 0
+          ) {
+            for (const selectorUnit of this.config.selector) {
+              let { property, selector, number, where } = selectorUnit;
+
+              where = where ? where : "children";
+
+              const elements = await page.$$(selector);
+
+              if (elements.length > 0) {
+                if (number === "unique") {
+                  let elementText;
+                  if (where === "children") {
+                    elementText = await elements[0].evaluate((el) =>
+                      el.innerText.trim()
+                    );
+                  } else if (where === "attribute") {
+                    if (selector.includes("src")) {
+                      elementText = await elements[0].evaluate(
+                        (el) => el.getAttribute(attributeName) || ""
+                      );
+                    }
+                  }
+                  data[property] = elementText;
+                } else if (number === "array") {
+                  let elementArray;
+                  if (where === "children") {
+                    elementArray = await Promise.all(
+                      elements.map((el) =>
+                        el.evaluate((el) => el.innerText.trim())
+                      )
+                    );
+                  } else if (where === "attribute") {
+                    if (selector.includes("src")) {
+                      elementArray = await Promise.all(
+                        elements.map((el) =>
+                          el.evaluate((el) => el.getAttribute("src") || "")
+                        )
+                      );
+                    }
+                  }
+                  data[property] = elementArray;
+                }
+              }
+            }
+          }
+
           results.push({
-            url: url,
-            title: await page.title(),
-            text: textContent.trim(),
+            url,
+            ...data,
           });
+
           crawlCount++;
         }
 
@@ -99,9 +163,8 @@ class WebCrawler {
           }
         }
 
-        // Récupérer les liens valides de la page
-        const links = await page.evaluate(() =>
-          Array.from(document.querySelectorAll("a[href]"), (link) => link.href)
+        const links = await page.$$eval("a[href]", (anchors) =>
+          anchors.map((a) => a.href)
         );
 
         // Télécharger les PDFs trouvés sur la page
@@ -113,12 +176,17 @@ class WebCrawler {
         // Ajouter les liens à la queue
         queue.push(
           ...links.filter(
-            (link) => !visited.has(link) && link.startsWith(this.config.url)
+            (link) =>
+              !visited.has(link) &&
+              link.startsWith(this.config.url) &&
+              link !== url
           )
         );
         visitCount++;
       } catch (err) {
-        console.error(`Error crawling ${url}: ${err.message}`);
+        console.error(
+          `Error crawling ${url}: ${err.message} ${this.config.selector}`
+        );
         this.#logError(url, err.message);
       }
     }
