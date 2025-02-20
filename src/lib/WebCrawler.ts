@@ -1,23 +1,23 @@
 import puppeteer from "puppeteer";
 import * as fs from "fs";
-import path from "path";
+import * as path from "path";
 import axios from "axios";
 import config from "../../res/config.js";
 
 class WebCrawler {
-  #jsonDir;
-  #pdfDir;
+  private jsonDir : string;
+  private pdfDir : string;
+  private fileCounter : number;
 
   constructor() {
-    this.config = config;
 
     // Préparer les dossiers de sortie
     const baseDir = path.join("res", "crawl", config.domain);
     const jsonDir = path.join(baseDir, "json");
     const pdfDir = path.join(baseDir, "pdf");
 
-    this.#jsonDir = jsonDir;
-    this.#pdfDir = pdfDir;
+    this.jsonDir = jsonDir;
+    this.pdfDir = pdfDir;
 
     if (fs.existsSync(baseDir)) {
       fs.rmSync(baseDir, { recursive: true });
@@ -32,15 +32,15 @@ class WebCrawler {
       fs.mkdirSync(pdfDir, { recursive: true });
     }
 
-    this.config.jsonOutputDir = jsonDir;
-    this.config.pdfOutputDir = pdfDir;
+    config.jsonOutputDir = jsonDir;
+    config.pdfOutputDir = pdfDir;
     this.fileCounter = 1; // Pour numérotation des fichiers JSON
 
-    if (!this.config.maxTokens) {
-      this.config.maxTokens = 1000; // Par défaut, on prend 1000 tokens par fichier JSON si non précisé
+    if (!config.maxTokens) {
+      config.maxTokens = 1000; // Par défaut, on prend 1000 tokens par fichier JSON si non précisé
     }
-    if (!this.config.maxFileSize) {
-      this.config.maxFileSize = 100; // Par défaut, on prend 100 Ko pour les tailles des fichiers PDF si non précisé
+    if (!config.maxFileSize) {
+      config.maxFileSize = 100; // Par défaut, on prend 100 Ko pour les tailles des fichiers PDF si non précisé
     }
   }
 
@@ -51,12 +51,12 @@ class WebCrawler {
     page.setDefaultNavigationTimeout(30000);
 
     const visited = new Set();
-    const queue = [this.config.url];
+    const queue = [config.url];
     let visitCount = 0;
     let crawlCount = 0;
     let results = [];
 
-    while (queue.length > 0 && crawlCount < this.config.maxPagesToCrawl) {
+    while (queue.length > 0 && crawlCount < config.maxPagesToCrawl) {
       const url = queue.shift();
       if (!url || visited.has(url)) continue;
 
@@ -67,9 +67,9 @@ class WebCrawler {
         await page.goto(url, { waitUntil: "domcontentloaded" });
 
         let textContent;
-        if (this.config.selector) {
-          textContent = await page.$$eval(this.config.selector, (elements) =>
-            elements.map((el) => el.textContent.trim()).join(" ")
+        if (config.ukSelector) {
+          textContent = await page.$$eval(config.ukSelector, (elements) =>
+            elements.map((el) => (el.textContent ? el.textContent.trim() : "")).join(" ")
           );
         } else {
           textContent = await page.evaluate(
@@ -79,27 +79,31 @@ class WebCrawler {
 
         if (
           textContent.trim() &&
-          this.#matchesUrl(url) &&
-          !this.#isExcludedUrl(url)
+          this.matchesUrl(url) &&
+          !this.isExcludedUrl(url)
         ) {
           console.log(
             `\x1b[37mCrawling (${crawlCount + 1}/${
-              this.config.maxPagesToCrawl
+              config.maxPagesToCrawl
             }):\x1b[0m ${url}`
           );
 
-          let data = {};
+          let data : any = {};
 
+          // Récupérer le titre de la page
+          const pageTitle = await page.title();
+          
           data = {
             ...data,
-            textContent: textContent,
+            title: pageTitle,
+            text: textContent,
           };
 
           if (
-            Array.isArray(this.config.selector) &&
-            this.config.selector.length > 0
+            Array.isArray(config.selector) &&
+            config.selector.length > 0
           ) {
-            for (const selectorUnit of this.config.selector) {
+            for (const selectorUnit of config.selector) {
               let { property, selector, number, where } = selectorUnit;
 
               where = where ? where : "children";
@@ -111,12 +115,12 @@ class WebCrawler {
                   let elementText;
                   if (where === "children") {
                     elementText = await elements[0].evaluate((el) =>
-                      el.innerText.trim()
+                      (el as HTMLElement).innerText.trim()
                     );
                   } else if (where === "attribute") {
                     if (selector.includes("src")) {
                       elementText = await elements[0].evaluate(
-                        (el) => el.getAttribute(attributeName) || ""
+                        (el) => el.getAttribute("src") || ""
                       );
                     }
                   }
@@ -126,7 +130,7 @@ class WebCrawler {
                   if (where === "children") {
                     elementArray = await Promise.all(
                       elements.map((el) =>
-                        el.evaluate((el) => el.innerText.trim())
+                        el.evaluate((el) => (el as HTMLElement).innerText.trim())
                       )
                     );
                   } else if (where === "attribute") {
@@ -153,12 +157,12 @@ class WebCrawler {
         }
 
         // Sauvegarder le fichier si la taille ou le nombre d'unités dépasse la limite
-        if (this.config.maxTokens && this.config.maxFileSize) {
+        if (config.maxTokens && config.maxFileSize) {
           if (
-            results.length >= this.config.maxTokens ||
-            this.#getBatchSize(results) >= this.config.maxFileSize * 1024
+            results.length >= config.maxTokens ||
+            this.getBatchSize(results) >= config.maxFileSize * 1024
           ) {
-            this.#saveBatch(results);
+            this.saveBatch(results);
             results = [];
           }
         }
@@ -170,7 +174,7 @@ class WebCrawler {
         // Télécharger les PDFs trouvés sur la page
         const pdfLinks = links.filter((link) => link.endsWith(".pdf"));
         for (const pdfLink of pdfLinks) {
-          await this.#downloadPdf(pdfLink);
+          await this.downloadPdf(pdfLink);
         }
 
         // Ajouter les liens à la queue
@@ -178,31 +182,31 @@ class WebCrawler {
           ...links.filter(
             (link) =>
               !visited.has(link) &&
-              link.startsWith(this.config.url) &&
+              link.startsWith(config.url) &&
               link !== url
           )
         );
         visitCount++;
-      } catch (err) {
+      } catch (err : any) {
         console.error(
-          `Error crawling ${url}: ${err.message} ${this.config.selector}`
+          `Error crawling ${url}: ${err.message} ${config.selector}`
         );
-        this.#logError(url, err.message);
+        this.logError(url, err.message);
       }
     }
 
     if (results.length > 0) {
-      this.#saveBatch(results);
+      this.saveBatch(results);
     }
 
     await browser.close();
     console.log(`\x1b[35mCrawling completed!\x1b[0m`);
   }
 
-  #matchesUrl(url) {
+   private matchesUrl(url : string) : boolean {
     let result = url.startsWith(config.url);
     if (config.matchers && config.matchers.length > 0) {
-      let resultMatcher = config.matchers.some((matcher) =>
+      let resultMatcher = config.matchers.some((matcher : string) =>
         url.startsWith(matcher)
       );
       result = result && resultMatcher;
@@ -210,21 +214,21 @@ class WebCrawler {
     return result;
   }
 
-  #isExcludedUrl(url) {
-    let result = this.config.exclude
-      ? this.config.exclude.some((pattern) => url.startsWith(pattern))
+  private isExcludedUrl(url : string) : boolean {
+    let result = config.exclude
+      ? config.exclude.some((pattern : string) => url.startsWith(pattern))
       : false;
     return result;
   }
 
-  #getBatchSize(batch) {
+  private getBatchSize(batch : any) : number {
     const jsonString = JSON.stringify(batch, null, 2);
     return Buffer.byteLength(jsonString, "utf8");
   }
 
-  #saveBatch(batch) {
-    const fileName = `${this.config.domain}-${this.fileCounter}.json`;
-    const outputFilePath = path.join(this.#jsonDir, fileName);
+  private saveBatch(batch : any) : void {
+    const fileName = `${config.domain}-${this.fileCounter}.json`;
+    const outputFilePath = path.join(this.jsonDir, fileName);
 
     // Sauvegarder le batch
     fs.writeFileSync(outputFilePath, JSON.stringify(batch, null, 2));
@@ -234,7 +238,7 @@ class WebCrawler {
     this.fileCounter++;
   }
 
-  async #downloadPdf(pdfUrl) {
+  private async downloadPdf(pdfUrl : string) : Promise<void> {
     try {
       const response = await axios.get(pdfUrl, {
         responseType: "arraybuffer",
@@ -246,18 +250,18 @@ class WebCrawler {
 
       const pdfBuffer = Buffer.from(response.data);
       const fileName = path.basename(pdfUrl);
-      const filePath = path.join(this.#pdfDir, fileName);
+      const filePath = path.join(this.pdfDir, fileName);
 
       fs.writeFileSync(filePath, pdfBuffer);
       console.log(`\x1b[36mDownloaded PDF:\x1b[0m ${filePath}`);
-    } catch (error) {
+    } catch (error : any) {
       console.error(`Error downloading PDF ${pdfUrl}: ${error.message}`);
       this.logError(pdfUrl, error.message);
     }
   }
 
-  #logError(url, errorMessage) {
-    const logPath = path.join(this.config.jsonOutputDir, "../error_log.txt");
+  logError(url : string, errorMessage : string) {
+    const logPath = path.join(config.jsonOutputDir, "../error_log.txt");
     const logMessage = `[${new Date().toISOString()}] Error crawling ${url}: ${errorMessage}\n`;
     fs.appendFileSync(logPath, logMessage);
     console.log(`Logged error for ${url}`);

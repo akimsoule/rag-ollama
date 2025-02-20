@@ -1,4 +1,8 @@
 .vscode
 data
+dist
+Modelfile
+res/config.esc.ts
+res/crawl
 node_modules
 package-lock.json

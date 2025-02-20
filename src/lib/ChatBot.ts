@@ -1,43 +1,49 @@
-import lancedb from "vectordb";
-import readline from "readline";
+import * as lancedb from "vectordb";
+import * as readline from "readline";
 import ollama from "ollama";
 import IndexDb from "./IndexDb.js";
 import config from "../../res/config.js";
 
 class ChatBot {
-  #dbPath;
-  #history = [];
-  #maxHistorySize;
+  private dbPath: string;
+  private history: { role: string; content: string }[] = [];
+  private maxHistorySize: number;
+  public orgName: string;
+  private model: string;
+  private db: lancedb.Connection | null;
 
-  
-  constructor(subject, maxHistorySize = 5) {
-    this.#dbPath = `data/lancedb/${config.domain}`;
+  constructor(subject?: string, maxHistorySize = 5) {
+    this.dbPath = `data/lancedb/${config.domain}`;
     this.orgName = subject ?? config.domain;
     this.model = config.model;
-    this.#maxHistorySize = maxHistorySize; // Taille maximale de l'historique
+    this.maxHistorySize = maxHistorySize; // Taille maximale de l'historique
+    this.db = null;
   }
 
   async init() {
     // Initialise et vérifie la base de données
-    this.db = await lancedb.connect(this.#dbPath);
+    this.db = await lancedb.connect(this.dbPath);
     if (!this.db) {
       throw new Error("Impossible de se connecter à la base de données");
     }
   }
 
-  async #queryDatabase(query, limit = 5) {
+  private async queryDatabase(query: string, limit = 5) {
     try {
+      if (!this.db) {
+        throw new Error("Impossible de se connecter à la base de données");
+      }
       const embeddingFunction = await IndexDb.getEmbeddedFunction();
       const table = await this.db.openTable(this.orgName, embeddingFunction);
       const results = await table
         .search(query)
-        .metricType("cosine")
+        .metricType(lancedb.MetricType.Cosine)
         .limit(limit)
         .execute();
 
       return results
-        .map((result) => (result.text ? result.text : ""))
-        .filter((text) => text.trim() !== "");
+        .map((result) => (result.text as string ? result.text as string : ""))
+        .filter((text: string) => text.trim() !== "");
     } catch (error) {
       console.error("Erreur lors de la requête à la base de données :", error);
       return [];
@@ -45,14 +51,14 @@ class ChatBot {
   }
 
   // Gérer l'historique des messages
-  updateHistory(role, content) {
-    this.#history.push({ role, content });
-    if (this.#history.length > this.#maxHistorySize) {
-      this.#history.shift(); // Supprimer le message le plus ancien si la taille dépasse la limite
+  updateHistory(role: string, content: string): void {
+    this.history.push({ role, content });
+    if (this.history.length > this.maxHistorySize) {
+      this.history.shift(); // Supprimer le message le plus ancien si la taille dépasse la limite
     }
   }
 
-  async chat(userMessage) {
+  private async chat(userMessage: string) {
     try {
       // Ajouter le message de l'utilisateur à l'historique
       this.updateHistory("user", userMessage);
@@ -61,9 +67,10 @@ class ChatBot {
       const messages = [
         {
           role: "system",
-          content: "Tu es un assistant spécialiste dans le domaine : " + this.orgName,
+          content:
+            "Tu es un assistant spécialiste dans le domaine : " + this.orgName,
         },
-        ...this.#history.map((entry) => ({
+        ...this.history.map((entry) => ({
           role: entry.role,
           content: entry.content,
         })),
@@ -87,8 +94,8 @@ class ChatBot {
     }
   }
 
-  async generate(userMessage) {
-    const relatedDocs = await this.#queryDatabase(userMessage);
+  async generate(userMessage : string) {
+    const relatedDocs = await this.queryDatabase(userMessage);
     const prompt = this.createPrompt(userMessage, relatedDocs);
 
     // Ajouter le message de l'utilisateur à l'historique
@@ -132,7 +139,7 @@ class ChatBot {
 
         try {
           await this.chat(userMessage);
-        } catch (error) {
+        } catch (error : any) {
           console.error("Erreur : ", error.message);
         }
 
@@ -163,7 +170,7 @@ class ChatBot {
 
         try {
           await this.generate(userMessage);
-        } catch (error) {
+        } catch (error : any) {
           console.error("Erreur : ", error.message);
         }
 
@@ -174,13 +181,13 @@ class ChatBot {
     askQuestion();
   }
 
-  createPrompt(question, context) {
+  createPrompt(question : string, context : string[]) {
     let prompt =
       "Répondez à la question en français en fonction du contexte ci-dessous.\n\n" +
       "Contexte:\n";
 
     prompt += context
-      .map((c) => c)
+      .map((c : string) => c)
       .join("\n\n---\n\n")
       .substring(0, 3750);
 

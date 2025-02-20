@@ -1,31 +1,30 @@
-import path from "path";
-import fs from "fs";
+import * as path from "path";
+import * as fs from "fs";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
-import lancedb from "vectordb";
-import { pipeline as embPipeline } from "@xenova/transformers";
+import * as lancedb from "vectordb";
 import config from "../../res/config.js";
 
 class IndexDb {
-  #orgName;
-  #srcPath;
+  private orgName : string;
+  private srcPath : string;
 
   constructor() {
-    this.#orgName = config.domain;
-    this.#srcPath = path.join(".", "res", "crawl", config.domain);
+    this.orgName = config.domain;
+    this.srcPath = path.join(".", "res", "crawl", config.domain);
   }
 
-  async initDB() {
+  public async initDB() {
     // Réinitialiser le dossier de la base de données
-    fs.rmSync(path.join("data", "lancedb", this.#orgName), {
+    fs.rmSync(path.join("data", "lancedb", this.orgName), {
       recursive: true,
       force: true,
     });
-    fs.mkdirSync(path.join("data", "lancedb", this.#orgName), {
+    fs.mkdirSync(path.join("data", "lancedb", this.orgName), {
       recursive: true,
     });
 
-    const db = await lancedb.connect("data/lancedb/" + this.#orgName);
-    let data = await this.#getAllDocs();
+    const db = await lancedb.connect("data/lancedb/" + this.orgName);
+    let data = await this.getAllDocs();
 
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: 5000,
@@ -47,7 +46,7 @@ class IndexDb {
 
     for (let index = 0; index < splitDocs.length; index += limit) {
       let splitDocsSliced = splitDocs.slice(index, index + limit);
-      await db.createTable(this.#orgName, splitDocsSliced, embeddingFunction, {
+      await db.createTable(this.orgName, splitDocsSliced, embeddingFunction, {
         writeMode: lancedb.WriteMode.Append,
       });
       console.log(
@@ -59,14 +58,16 @@ class IndexDb {
     }
   }
 
-  static async getEmbeddedFunction() {
-    const pipe = await embPipeline(
+  public static async getEmbeddedFunction() {
+    // Utilisation de dynamic import pour @xenova/transformers
+    const { pipeline } = await import("@xenova/transformers");
+    const pipe = await pipeline(
       "feature-extraction",
       "Xenova/all-MiniLM-L6-v2"
     );
     const embed_fun = {
       sourceColumn: "text",
-      embed: async (batch) => {
+      embed: async (batch : string[]) => {
         let result = [];
         for (let text of batch) {
           const res = await pipe(text, { pooling: "mean", normalize: true });
@@ -78,7 +79,7 @@ class IndexDb {
     return embed_fun;
   }
 
-  async #readPDF(filePath) {
+  private async readPDF(filePath : string) : Promise<string> {
     try {
       // Lire le fichier PDF en tant que Buffer
       const pdfBuffer = fs.readFileSync(filePath);
@@ -90,13 +91,13 @@ class IndexDb {
       const extractedText = this.extractTextFromPDF(pdfText);
 
       return extractedText;
-    } catch (error) {
+    } catch (error : any) {
       console.error(`Erreur lors de la lecture du PDF : ${error.message}`);
       return "";
     }
   }
 
-  extractTextFromPDF(pdfContent) {
+  public extractTextFromPDF(pdfContent : string) : string {
     // Une expression régulière pour extraire du texte brut entre parenthèses
     const textRegex = /\(([^)]+)\)/g;
 
@@ -111,22 +112,22 @@ class IndexDb {
     return result.trim();
   }
 
-  async #getAllDocs() {
+  private async getAllDocs() {
     let allDoc = [];
     let jsonCount = 0;
     let pdfCount = 0;
 
-    const files = this.#getFilesRecursively(this.#srcPath);
+    const files = this.getFilesRecursively(this.srcPath);
 
     for (const file of files) {
       const filePath = path.join(file);
       if (file.endsWith(".json")) {
         let content = fs.readFileSync(filePath, { encoding: "utf8" });
         let datas = JSON.parse(content);
-        const currentDoc = datas.map((data) => ({
+        const currentDoc = datas.map((data : {text : string, url : string, title : string}) => ({
           pageContent: data.text,
           metadata: {
-            domain: this.#orgName,
+            domain: this.orgName,
             fileName: file,
             source: data.url,
             title: data.title,
@@ -136,7 +137,7 @@ class IndexDb {
         jsonCount++;
       } else if (file.endsWith(".pdf")) {
         try {
-          let content = await this.#readPDF(filePath);
+          let content = await this.readPDF(filePath);
           if (content.trim() === "") {
             // console.error(`Error reading PDF ${file}: Empty content`);
             continue;
@@ -144,14 +145,14 @@ class IndexDb {
           allDoc.push({
             pageContent: content,
             metadata: {
-              domain: this.#orgName,
+              domain: this.orgName,
               fileName: file,
               source: filePath,
               title: path.basename(file, ".pdf"),
             },
           });
           pdfCount++;
-        } catch (err) {
+        } catch (err : any) {
           console.error(`Error reading PDF ${file}: ${err.message}`);
         }
       }
@@ -160,14 +161,14 @@ class IndexDb {
     return allDoc;
   }
 
-  #getFilesRecursively(dir) {
-    let files = [];
+  public getFilesRecursively(dir : string) {
+    let files : string[] = [];
     const entries = fs.readdirSync(dir, { withFileTypes: true });
 
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        files = files.concat(this.#getFilesRecursively(fullPath));
+        files = files.concat(this.getFilesRecursively(fullPath));
       } else {
         files.push(fullPath);
       }

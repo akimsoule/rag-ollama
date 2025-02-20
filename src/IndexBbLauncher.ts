@@ -6,6 +6,6 @@ index
   .then(() => {
     console.log("Base de données initialisée avec succès.");
   })
-  .catch(() => {
-    console.error("Erreur lors de l'initialisation de la base de données.");
+  .catch((error) => {
+    console.error("Erreur lors de l'initialisation de la base de données.", error);
   });
